@@ -15,84 +15,15 @@ class DocumentParser:
 
     def __init__(
             self,
-            document: Union[str, bytes] = None,
+            document: bytes = None,
             service: ServiceType = ServiceType.LANDING_AI,
     ) -> None:
 
         self.service = service
         self.document = document
 
-    @staticmethod
-    def _convert_pdf_to_images_to_pdf(
-        input_pdf: fitz.Document,
-        output_path: str = None,
-    ) -> fitz.Document:
-        """ Converts each page of a PDF document to an image and then compiles them back into a PDF. """
-
-        try:
-            DEFAULT_DPI = 450
-            output_pdf = fitz.open()
-
-            for i, page in enumerate(input_pdf):
-                pix = page.get_pixmap(dpi=DEFAULT_DPI)
-                img_bytes = pix.tobytes(output="jpeg", jpg_quality=85)
-                new_page = output_pdf.new_page(
-                    width=page.rect.width, height=page.rect.height)
-                new_page.insert_image(page.rect, stream=img_bytes)
-                logger.info(f"  > Processed page {i + 1}/{len(input_pdf)}")
-
-            if output_path:
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                output_pdf.save(
-                    output_path,
-                    garbage=4,  # remove unused objects
-                    deflate=True,  # compress streams
-                )
-        except Exception as e:
-            logger.error(f"Error during PDF conversion: {e}")
-        # finally:
-            # input_pdf.close()
-            # output_pdf.close()
-
-        return output_pdf
-
-    def document_reader(self, document: Union[str, bytes]) -> bytes:
-        if isinstance(document, str):
-            try:
-                if document.startswith("http://") or document.startswith("https://"):
-                    response = requests.get(document)
-                    response.raise_for_status()
-                    pdf_bytes = response.content
-                else:
-                    with open(document, "rb") as file:
-                        pdf_bytes = file.read()
-                logger.info(f"PDF size: {len(pdf_bytes) / (1024*1024):.2f} MB")
-            except FileNotFoundError:
-                raise FileNotFoundError(
-                    f"Document not found at path: {document}")
-            except IOError as e:
-                raise IOError(f"Failed to read document: {e}")
-
-            if self.service == ServiceType.LANDING_AI:
-                with fitz.open("pdf", pdf_bytes) as doc:
-                    converted_pdf = self._convert_pdf_to_images_to_pdf(
-                        input_pdf=doc,
-                        output_path=None
-                    )
-                    pdf_bytes_io = io.BytesIO()
-                    converted_pdf.save(pdf_bytes_io)
-                    pdf_bytes = pdf_bytes_io.getvalue()
-                    logger.info(
-                        f"Converted PDF size: {len(pdf_bytes) / (1024*1024):.2f} MB")
-                    return pdf_bytes
-        else:
-            # Document is already bytes
-            logger.info(f"PDF size: {len(document) / (1024*1024):.2f} MB")
-            return document
-
     def parse(self, plot: bool = False) -> Union[ParseResponse, dict]:
         """Parse the document and return structured data."""
-        document_bytes = self.document_reader(self.document)
 
         if self.service == ServiceType.LANDING_AI:
             client = LandingAIClient()
@@ -108,9 +39,9 @@ class DocumentParser:
                 logger.info(
                     f"Mock parsed response loaded from {mock_response_pkl_path}.")
             else:
-                parsed_response = client.parse(document=document_bytes)
+                parsed_response = client.parse(document=self.document)
         else:
-            parsed_response = client.parse(document=document_bytes)
+            parsed_response = client.parse(document=self.document)
 
         if plot:
             if not isinstance(self.document, str) or not self.document.lower().endswith(".pdf"):
@@ -119,7 +50,7 @@ class DocumentParser:
                 return parsed_response
 
             try:
-                doc = fitz.open("pdf", document_bytes)
+                doc = fitz.open("pdf", self.document)
 
                 CHUNK_TYPE_COLORS = {
                     "text": (0, 1, 0),        # Green
