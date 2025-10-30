@@ -8,6 +8,7 @@ from src.processor import StructuredJSON2PydanticConverter
 from src.services.llms.azure_openai.params import AzureOpenAIChatCompletionMessageParam
 from src.services.llms.azure_openai import AzureOpenAIClient
 
+
 class EntitiesExtractor:
 
     _LANDING_AI_SYSTEM_PROMPT = (
@@ -43,7 +44,7 @@ class EntitiesExtractor:
     )
 
     def __init__(
-            self, 
+            self,
             contexts: Dict[str, List[Dict[str, Any]]],
             service: str = ServiceType.LANDING_AI,
     ) -> None:
@@ -97,7 +98,8 @@ class EntitiesExtractor:
                 }
             elif isinstance(value, list):
                 values = [{"value": item} for item in value]
-                value_type = "list[string]" if all(isinstance(item, str) for item in value) else "list[boolean]" if all(isinstance(item, bool) for item in value) else "list[mixed]" 
+                value_type = "list[string]" if all(isinstance(item, str) for item in value) else "list[boolean]" if all(
+                    isinstance(item, bool) for item in value) else "list[mixed]"
                 entity = {
                     "name": key,
                     "values": values,
@@ -125,7 +127,7 @@ class EntitiesExtractor:
         if not steps:
             logger.warning("No steps found in contexts for entity extraction.")
             return None
-        
+
         for i, step in enumerate(steps):
             step_name = step.get('name', f'step_{i+1}')
             step_fields = step.get('fields', [])
@@ -135,11 +137,11 @@ class EntitiesExtractor:
                 params = AzureOpenAIChatCompletionMessageParam(
                     message_text=[
                         {
-                            "role": "system", 
+                            "role": "system",
                             "content": self._SYSTEM_PROMPT
                         },
                         {
-                            "role": "user", 
+                            "role": "user",
                             "content": (
                                 f"Extract the following entities from the text below and format them according to the schema:\n\n"
                                 f"Text:\n{step.get('context', '')}\n\n"
@@ -150,7 +152,8 @@ class EntitiesExtractor:
                     temperature=0.25,
                 )
 
-                gpt_response = azure_openai_client.structured_output_generate_response(params=params)
+                gpt_response = azure_openai_client.structured_output_generate_response(
+                    params=params)
                 if gpt_response:
                     json_gpt_response = converter.serialize(
                         model_class=pydantic_model,
@@ -165,7 +168,8 @@ class EntitiesExtractor:
                         "fields": self._structured_entity_extraction(json_gpt_response)
                     })
                 else:
-                    logger.warning(f"No response from LLM for step: {step_name}")
+                    logger.warning(
+                        f"No response from LLM for step: {step_name}")
                     response["steps"].append({
                         "step": step.get("name"),
                         "fields": []

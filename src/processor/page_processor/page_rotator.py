@@ -1,100 +1,113 @@
 import cv2
 import fitz
-import pytesseract
 import numpy as np
+import pytesseract
 from loguru import logger
 
-from src.processor.page_processor.skew_detector import SkewDetector
 
-class PageRotator:    
-    VERTICAL_ANGLE = 90
-    UPSIDE_DOWN_ANGLE = 180
-    
-    def __init__(self):
-        self.skew_detector = SkewDetector()
+class PageRotator:
+    """Rotate PDF pages while keeping the original content (e.g. widgets) intact."""
 
-    def rotate(self, page: fitz.Page) -> fitz.Page:
-        # Implement your rotation logic here
-        page, landscape_orientation = self.landscape_rotator(page)
-        page, page_image, upside_down_orientation = self.upside_down_rotator(page)
+    _LANDSCAPE_ROTATION = 90
+    _UPSIDE_DOWN_ANGLE = 180
+    _PIXMAP_SCALE = 3.0
+    _MAX_DIMENSION = 4000
 
-        # Write code to save `page_image` for debugging if needed
-        # cv2.imwrite(f"debug_page_{page.number + 1}.png", page_image)
-        return page
+    def rotate(self, page: fitz.Page) -> int:
+        """Rotate the supplied page in-place and return the net rotation applied.
 
-    def _get_text_orientation(self, image, page_num: int) -> int:
-        # Detect text direction
-        # Downscale only if image is very large (e.g., width or height > 4000)
-        max_dim = 4000
-        orig_shape = image.shape
-        scale_factor = 1.0
-        if image.shape[0] > max_dim or image.shape[1] > max_dim:
-            scale_factor = max_dim / max(image.shape[0], image.shape[1])
-            new_size = (int(image.shape[1] * scale_factor), int(image.shape[0] * scale_factor))
-            small_image = cv2.resize(image, new_size, interpolation=cv2.INTER_AREA)
-            print(f"[Rotation] Downscaled image for orientation check: original={orig_shape}, new={small_image.shape}, scale_factor={scale_factor:.3f}")
-        else:
-            small_image = image
+        The method only updates the page metadata so the underlying PDF objects
+        (forms, annotations, etc.) remain untouched.
+        """
+        net_rotation = 0
+
+        if self._is_landscape(page):
+            net_rotation += self._apply_rotation(page,
+                                                 self._LANDSCAPE_ROTATION)
+
+        net_rotation += self._correct_upside_down(page)
+        return net_rotation
+
+    def _is_landscape(self, page: fitz.Page) -> bool:
+        return page.rect.width > page.rect.height
+
+    def _apply_rotation(self, page: fitz.Page, angle: int) -> int:
+        target_rotation = (page.rotation + angle) % 360
+        page.set_rotation(target_rotation)
+        logger.debug(
+            "Rotated page {} by {} degrees (new rotation: {})",
+            page.number + 1,
+            angle,
+            target_rotation,
+        )
+        return angle
+
+    def _correct_upside_down(self, page: fitz.Page) -> int:
+        pix = page.get_pixmap(matrix=fitz.Matrix(
+            self._PIXMAP_SCALE, self._PIXMAP_SCALE))
+        image = self._pix_to_cv2_image(pix)
+
+        text_orientation = self._get_text_orientation(image, page.number)
+        if text_orientation == self._UPSIDE_DOWN_ANGLE:
+            self._apply_rotation(page, self._UPSIDE_DOWN_ANGLE)
+            logger.debug(
+                "Corrected upside-down orientation on page {}", page.number + 1)
+            return self._UPSIDE_DOWN_ANGLE
+
+        logger.debug("Page {} orientation is correct", page.number + 1)
+        return 0
+
+    def _get_text_orientation(self, image: np.ndarray, page_num: int) -> int:
+        """Return the detected text orientation in degrees."""
+        image_for_osd = self._downscale_for_osd(image)
+
         try:
-            if len(small_image.shape) < 3 or small_image.shape[2] == 1:
-                gray = small_image
+            if image_for_osd.ndim == 2:
+                gray = image_for_osd
             else:
-                gray = cv2.cvtColor(small_image, cv2.COLOR_BGR2GRAY)
-            # min_characters_to_try is set to 200 to ensure that the orientation is detected accurately: https://github.com/tesseract-ocr/tesseract/issues/4172#issuecomment-1865313332
-            result = pytesseract.image_to_osd(gray, output_type="dict", config='--psm 0 -c min_characters_to_try=200')
-            text_orientation = result['orientation']
-        except Exception as e:
-            text_orientation = 0
-        print(f"Text orientation for page {page_num + 1}: {text_orientation} degrees")
-        return text_orientation
-    
-    def pix_to_cv2_image(self, pix):
-        # If the image is CMYK, convert it to RGB
-        if pix.n - pix.alpha == 4:  # CMYK
+                gray = cv2.cvtColor(image_for_osd, cv2.COLOR_BGR2GRAY)
+
+            # min_characters_to_try improves accuracy for sparse documents.
+            result = pytesseract.image_to_osd(
+                gray, output_type="dict", config="--psm 0 -c min_characters_to_try=200"
+            )
+            orientation = result.get("orientation", 0)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Failed to detect text orientation on page {}: {}", page_num + 1, exc
+            )
+            orientation = 0
+
+        logger.debug("Detected text orientation for page {}: {} deg",
+                     page_num + 1, orientation)
+        return orientation
+
+    def _downscale_for_osd(self, image: np.ndarray) -> np.ndarray:
+        height, width = image.shape[:2]
+        max_dim = max(height, width)
+        if max_dim <= self._MAX_DIMENSION:
+            return image
+
+        scale = self._MAX_DIMENSION / max_dim
+        new_size = (int(width * scale), int(height * scale))
+        return cv2.resize(image, new_size, interpolation=cv2.INTER_AREA)
+
+    def _pix_to_cv2_image(self, pix: fitz.Pixmap) -> np.ndarray:
+        # If the image is CMYK convert it to RGB before handing to OpenCV.
+        if pix.n - pix.alpha == 4:
             pix = fitz.Pixmap(fitz.csRGB, pix)
 
-        if pix.n - pix.alpha == 1:  # Grayscale
-            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w).copy()
-            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        else:  # RGB or RGBA
-            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n).copy()
-            if pix.alpha:  # If there is an alpha channel, remove it
-                img = img[:, :, :3]
-            
-            # Check if the image is already in BGR format
-            if pix.colorspace == fitz.csRGB:
-                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            # If it's not RGB, assume it's already in BGR format
-        
+        if pix.n - pix.alpha == 1:
+            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+                pix.h, pix.w).copy()
+            return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
+        img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+            pix.h, pix.w, pix.n).copy()
+        if pix.alpha:
+            img = img[:, :, :3]
+
+        if pix.colorspace == fitz.csRGB:
+            return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
         return img
-
-    def landscape_rotator(self, page: fitz.Page) -> tuple[fitz.Page, int]:
-        """ Determine page orientation by comparing width and height """
-        is_landscape = page.rect.width > page.rect.height
-        target_rotation = 0
-        if is_landscape:
-            current_rotation = page.rotation
-            target_rotation = (current_rotation + 90) % 360
-            page.set_rotation(target_rotation)
-        else:
-            logger.info(f"Page {page.number + 1} is in portrait orientation, no rotation needed")
-            
-        return page, target_rotation
-
-    def upside_down_rotator(self, page: fitz.Page, multiplier: float = 3.0) -> tuple[fitz.Page, np.ndarray, int]:
-        """ Determine if the page is upside down """
-        # Initial image conversion
-        pix = page.get_pixmap(matrix=fitz.Matrix(multiplier, multiplier))
-        image = self.pix_to_cv2_image(pix)
-        current_rotation = page.rotation
-        
-        # Check and correct text orientation
-        text_orientation = self._get_text_orientation(image, page.number)
-        if text_orientation == self.UPSIDE_DOWN_ANGLE:
-            target_rotation = (current_rotation + self.UPSIDE_DOWN_ANGLE) % 360
-            page.set_rotation(target_rotation)
-            image = cv2.rotate(image, cv2.ROTATE_180)
-            print(f"Page {page.number + 1} is upside down, rotating to correct orientation")
-        else:
-            print(f"Page {page.number + 1} is in correct orientation, no rotation needed")
-        return page, image, self.UPSIDE_DOWN_ANGLE if text_orientation == self.UPSIDE_DOWN_ANGLE else 0

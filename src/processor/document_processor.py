@@ -3,6 +3,7 @@ from difflib import SequenceMatcher
 from typing import Union, Dict, Any, List
 from landingai_ade.types.parse_response import ParseResponse
 
+
 class DocumentProcessor:
     def __init__(self, document: Union[ParseResponse, dict], schema: Dict[str, Any] = None) -> None:
         self.document = document
@@ -26,13 +27,13 @@ class DocumentProcessor:
                 continue
             lines = chunk.markdown.split('\n')
             remaining_lines = lines[2:] if len(lines) > 2 else []
-            
+
             cleaned_lines = []
             for line in remaining_lines:
                 cleaned_line = line.lstrip('#').strip()
                 cleaned_line = cleaned_line.replace('**', '')
                 cleaned_lines.append(cleaned_line)
-            
+
             chunk_texts.append('\n'.join(cleaned_lines))
 
         step_markers = []
@@ -49,15 +50,16 @@ class DocumentProcessor:
                 first_line = text.split('\n')[0]
                 if re.match(r'Step\s+[\w\d]+[:.]', first_line):
                     if SequenceMatcher(None, first_line, step_name).ratio() > 0.85:
-                        step_markers.append({'step_index': i, 'chunk_index': j, 'step_name': step_name})
-                        break 
-        
+                        step_markers.append(
+                            {'step_index': i, 'chunk_index': j, 'step_name': step_name})
+                        break
+
         step_markers.sort(key=lambda x: x['chunk_index'])
 
         for i, marker in enumerate(step_markers):
             schema_step_index = marker['step_index']
             start_chunk_index = marker['chunk_index']
-            
+
             end_chunk_index = len(chunk_texts)
             if i + 1 < len(step_markers):
                 end_chunk_index = step_markers[i+1]['chunk_index']

@@ -6,14 +6,16 @@ from loguru import logger
 from typing import Dict, Any, List, Type, Tuple, Union, Optional
 from pydantic import BaseModel, Field, create_model, ConfigDict, ValidationError
 
+
 class JSON2PydanticConverter(ABC):
     """
     Converts a JSON schema dictionary into a Pydantic model, primarily for use
     with OpenAI's structured outputs.
     """
 
-    _nested_model_counter: int = 0  # Counter to ensure unique names for dynamically generated nested Pydantic models.
-    
+    # Counter to ensure unique names for dynamically generated nested Pydantic models.
+    _nested_model_counter: int = 0
+
     @staticmethod
     def _sanitize_model_name(name: str) -> str:
         """
@@ -27,19 +29,20 @@ class JSON2PydanticConverter(ABC):
 
         # Remove characters invalid for Python identifiers, replace with '_'
         name = re.sub(r"\W|^(?=\d)", "_", name)
-        
+
         # Replace multiple consecutive underscores with a single one
         name = re.sub(r"_+", "_", name)
-        
+
         # Remove leading/trailing underscores
         name = name.strip("_")
-        
+
         # Ensure the name is not empty and starts with a letter or underscore
         if not name or (not name[0].isalpha() and name[0] != "_"):
-            name = f"Model_{name}"  # Ensures it starts with a letter or underscore.
+            # Ensures it starts with a letter or underscore.
+            name = f"Model_{name}"
 
         return name if name else "DefaultGeneratedModel"
-    
+
     def _generate_unique_nested_model_name(self, model_name_prefix: str, original_key: str) -> str:
         """
         Generates a unique and valid Python class name for a nested Pydantic model.
@@ -47,21 +50,21 @@ class JSON2PydanticConverter(ABC):
         """
         JSON2PydanticConverter._nested_model_counter += 1
         sanitized_key_part = self._sanitize_model_name(original_key)
-        
+
         # Ensure sanitized_key_part is not empty and provides a good naming component.
         if not sanitized_key_part:
             sanitized_key_part = "Nested"
-            
+
         return f"{model_name_prefix}_{sanitized_key_part}_M{JSON2PydanticConverter._nested_model_counter}"
-    
+
     @abstractmethod
     def _convert_dict_to_model(self):
         raise NotImplementedError("Subclasses must implement this method.")
-    
+
     @abstractmethod
     def convert(self):
         raise NotImplementedError("Subclasses must implement this method.")
-    
+
     @staticmethod
     def print_pydantic_model_schema(model_class: Type[BaseModel], _indent_level: int = 0) -> None:
         """
@@ -73,7 +76,8 @@ class JSON2PydanticConverter(ABC):
         """
         base_indent = "  " * _indent_level
         if not hasattr(model_class, 'model_fields'):
-            print(f"{base_indent}Error: {model_class} is not a Pydantic model or has no fields.")
+            print(
+                f"{base_indent}Error: {model_class} is not a Pydantic model or has no fields.")
             return
 
         for field_name, field_info in model_class.model_fields.items():
@@ -92,11 +96,12 @@ class JSON2PydanticConverter(ABC):
                     for arg in args:
                         if hasattr(arg, 'model_fields') and isinstance(arg, type) and issubclass(arg, BaseModel):
                             annotation_to_check.append(arg)
-            
-            for nested_model_class in annotation_to_check:
-                print(f"{base_indent}    Nested Model '{nested_model_class.__name__}' Fields (for field '{field_name}'):")
-                JSON2PydanticConverter.print_pydantic_model_schema(nested_model_class, _indent_level + 2)
 
+            for nested_model_class in annotation_to_check:
+                print(
+                    f"{base_indent}    Nested Model '{nested_model_class.__name__}' Fields (for field '{field_name}'):")
+                JSON2PydanticConverter.print_pydantic_model_schema(
+                    nested_model_class, _indent_level + 2)
 
     def serialize(self, model_class: Type[BaseModel], data: Any, verbose=False) -> Dict[str, Any]:
         """
@@ -108,31 +113,37 @@ class JSON2PydanticConverter(ABC):
             data_dict: The dictionary to instantiate the model with (using aliases).
         """
         if not isinstance(data, model_class):
-            logger.error(f"Data is not an instance of {model_class.__name__}. Cannot serialize.")
+            logger.error(
+                f"Data is not an instance of {model_class.__name__}. Cannot serialize.")
             return {}
 
         data_dict = data.model_dump(by_alias=True)
 
         if verbose:
-            print(f"\n--- Attempting instantiation for {model_class.__name__} ---")
+            print(
+                f"\n--- Attempting instantiation for {model_class.__name__} ---")
             try:
                 instance = model_class(**data_dict)
-                
+
                 print("Instantiation successful!")
                 print("Instantiated Model (JSON by alias):")
                 print(instance.model_dump_json(by_alias=True, indent=2))
-                
+
                 # Also print the Pydantic schema for OpenAI (as in the original example)
                 # Ensure by_alias=True is used if your OpenAI functions expect original JSON keys
-                print(f"Pydantic schema for OpenAI (by alias): {model_class.model_json_schema(by_alias=True)}")
+                print(
+                    f"Pydantic schema for OpenAI (by alias): {model_class.model_json_schema(by_alias=True)}")
 
             except ValidationError as e:
-                print(f"Validation Error during instantiation of {model_class.__name__}: {e}")
+                print(
+                    f"Validation Error during instantiation of {model_class.__name__}: {e}")
             except Exception as e:
-                print(f"An unexpected error occurred during instantiation of {model_class.__name__}: {e}")
+                print(
+                    f"An unexpected error occurred during instantiation of {model_class.__name__}: {e}")
 
         return data_dict
-    
+
+
 class StructuredJSON2PydanticConverter(JSON2PydanticConverter):
 
     def _convert_dict_to_model(
@@ -147,7 +158,7 @@ class StructuredJSON2PydanticConverter(JSON2PydanticConverter):
             schema_dict: The dictionary defining the schema for the current model.
             model_py_name: The Python-valid class name for the Pydantic model to be created.
             current_model_name_prefix_for_children: A prefix used for generating names of any nested models.
-        
+
         Returns:
             The dynamically created Pydantic model class.
         """
@@ -172,9 +183,10 @@ class StructuredJSON2PydanticConverter(JSON2PydanticConverter):
 
         for original_key, value_schema in schema_dict.items():
             # pydantic_internal_field_name = f"field_{pydantic_field_index}"
-            pydantic_internal_field_name = self._sanitize_model_name(original_key)
+            pydantic_internal_field_name = self._sanitize_model_name(
+                original_key)
             pydantic_field_index += 1
-            
+
             current_field_type: Any
 
             if isinstance(value_schema, dict):
@@ -208,9 +220,10 @@ class StructuredJSON2PydanticConverter(JSON2PydanticConverter):
                     f"Expected a dictionary (for nested model), list (e.g., [], [''], or ['bool']), "
                     f"the string 'bool' (for boolean), or an empty string '' (for string)."
                 )
-            
+
             field_definitions[pydantic_internal_field_name] = (
-                current_field_type, Field(..., description=original_key, alias=original_key)
+                current_field_type, Field(...,
+                                          description=original_key, alias=original_key)
             )
 
         try:
@@ -229,9 +242,9 @@ class StructuredJSON2PydanticConverter(JSON2PydanticConverter):
 
         if not isinstance(json_input_schema, dict):
             raise TypeError("Input JSON schema must be a dictionary.")
-        
+
         JSON2PydanticConverter._nested_model_counter = 0
-        
+
         root_model_class = self._convert_dict_to_model(
             schema_dict=json_input_schema,
             model_py_name=root_model_name,

@@ -3,6 +3,7 @@ from loguru import logger
 from landingai_ade import LandingAIADE
 from landingai_ade.types.parse_response import ParseResponse
 
+
 class LandingAIClient:
     def __init__(self) -> None:
         logger.info("Initializing LandingAI Client")
@@ -15,6 +16,6 @@ class LandingAIClient:
             model='dpt-2-latest',
         )
         return response
-    
+
     def extract(self) -> None:
         pass
