@@ -15,6 +15,8 @@ class LandingAIClient:
             document=document,
             model='dpt-2-latest',
         )
+        logger.info(
+            f"Document parsed successfully with LandingAI. Runtime: {response.metadata.duration_ms} ms")
         return response
 
     def extract(self) -> None:
