@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
 import fitz
 import requests
@@ -14,9 +14,7 @@ from src.processor.page_processor import PageRotator, SkewDetector
 class PreprocessingSettings:
     """Configuration that balances readability with manageable file sizes."""
 
-    min_dpi: int = 240
-    max_dpi: int = 360
-    target_long_edge_px: int = 3400
+    raster_dpi: int = 450
     jpg_quality: int = 82
     preserve_image_only_pages: bool = True
     optimize_garbage: int = 4
@@ -24,13 +22,8 @@ class PreprocessingSettings:
     optimize_deflate: bool = True
 
     def __post_init__(self) -> None:
-        if self.min_dpi <= 0:
-            raise ValueError("min_dpi must be positive.")
-        if self.max_dpi < self.min_dpi:
-            raise ValueError(
-                "max_dpi must be greater than or equal to min_dpi.")
-        if self.target_long_edge_px <= 0:
-            raise ValueError("target_long_edge_px must be positive.")
+        if self.raster_dpi <= 0:
+            raise ValueError("raster_dpi must be positive.")
         if not (0 <= self.jpg_quality <= 100):
             raise ValueError("jpg_quality must be in the range [0, 100].")
         if not (0 <= self.optimize_garbage <= 4):
@@ -105,45 +98,19 @@ class DocumentPreprocessor(ABC):
             page_count = input_pdf.page_count
 
             for index, page in enumerate(input_pdf):
-                current_dpi = self._determine_page_dpi(page)
-                scale = current_dpi / 72.0
-
-                if self.settings.preserve_image_only_pages:
-                    try:
-                        has_text = bool(
-                            page.get_text(
-                                "text", flags=fitz.TEXTFLAGS_TEXT).strip()
-                        )
-                    except RuntimeError:
-                        has_text = True
-
-                    if not has_text:
-                        output_pdf.insert_pdf(
-                            input_pdf, from_page=index, to_page=index)
-                        logger.info(
-                            f"Copied original page {index + 1}/{page_count} (no selectable text)"
-                        )
-                        continue
-
-                matrix = fitz.Matrix(scale, scale)
-                pix = page.get_pixmap(matrix=matrix, alpha=False)
-
-                try:
-                    img_bytes = pix.tobytes(
-                        output="jpeg", jpg_quality=self.settings.jpg_quality
+                if self._should_copy_page(page):
+                    output_pdf.insert_pdf(
+                        input_pdf, from_page=index, to_page=index)
+                    logger.info(
+                        f"Copied original page {index + 1}/{page_count} (no selectable text)"
                     )
-                except ValueError as exc:
-                    logger.warning(
-                        f"Falling back to PNG for page {index + 1} due to JPEG encoding error: {exc}"
-                    )
-                    img_bytes = pix.tobytes(output="png")
+                    continue
 
-                page_rect = fitz.Rect(0, 0, page.rect.width, page.rect.height)
-                new_page = output_pdf.new_page(
-                    width=page_rect.width, height=page_rect.height)
-                new_page.insert_image(page_rect, stream=img_bytes)
+                image_bytes, page_rect = self._render_page_to_image(page)
+                self._append_rasterized_page(
+                    output_pdf, page_rect, image_bytes)
                 logger.info(
-                    f"Processed page {index + 1}/{page_count} at {current_dpi} DPI"
+                    f"Processed page {index + 1}/{page_count} at {self.settings.raster_dpi} DPI"
                 )
 
             converted_bytes = self._serialize_pdf(output_pdf)
@@ -203,24 +170,54 @@ class DocumentPreprocessor(ABC):
             input_pdf.close()
             output_pdf.close()
 
-    def _determine_page_dpi(self, page: fitz.Page) -> int:
-        long_edge_inches = max(page.rect.width, page.rect.height) / 72.0
-        if long_edge_inches <= 0:
-            return self.settings.min_dpi
+    def _should_copy_page(self, page: fitz.Page) -> bool:
+        """Return True when a page contains no selectable text and can be copied directly."""
+        if not self.settings.preserve_image_only_pages:
+            return False
 
-        target_dpi = int(
-            round(self.settings.target_long_edge_px / long_edge_inches))
-        clamped_dpi = max(
-            self.settings.min_dpi,
-            min(self.settings.max_dpi, target_dpi),
-        )
-        logger.debug(
-            "Selected rasterisation DPI {} for page {} (long_edge_inches={:.2f})",
-            clamped_dpi,
-            page.number + 1,
-            long_edge_inches,
-        )
-        return clamped_dpi
+        try:
+            extracted_text = page.get_text(
+                "text", flags=fitz.TEXTFLAGS_TEXT).strip()
+        except RuntimeError as exc:
+            logger.debug(
+                "Failed to extract text for page %s: %s. Rasterising page.",
+                page.number + 1,
+                exc,
+            )
+            return False
+
+        return not extracted_text
+
+    def _render_page_to_image(self, page: fitz.Page) -> Tuple[bytes, fitz.Rect]:
+        """Rasterise a page using the fixed DPI budget."""
+        scale = self.settings.raster_dpi / 72.0
+        matrix = fitz.Matrix(scale, scale)
+        pix = page.get_pixmap(matrix=matrix, alpha=False)
+
+        try:
+            image_bytes = pix.tobytes(
+                output="jpeg", jpg_quality=self.settings.jpg_quality)
+        except ValueError as exc:
+            logger.warning(
+                "Falling back to PNG for page %s due to JPEG encoding error: %s",
+                page.number + 1,
+                exc,
+            )
+            image_bytes = pix.tobytes(output="png")
+
+        page_rect = fitz.Rect(0, 0, page.rect.width, page.rect.height)
+        return image_bytes, page_rect
+
+    @staticmethod
+    def _append_rasterized_page(
+        document: fitz.Document,
+        page_rect: fitz.Rect,
+        image_bytes: bytes,
+    ) -> None:
+        """Insert a rasterised image into the output PDF."""
+        new_page = document.new_page(
+            width=page_rect.width, height=page_rect.height)
+        new_page.insert_image(page_rect, stream=image_bytes)
 
     def _serialize_pdf(self, document: fitz.Document) -> bytes:
         try:
