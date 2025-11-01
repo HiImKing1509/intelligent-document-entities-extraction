@@ -16,7 +16,7 @@ class DocumentParserFactory:
     }
 
     @classmethod
-    def create_parser(cls, service: ServiceType, document: bytes) -> DocumentParser:
+    def create_parser(cls, service: ServiceType, document: bytes, document_parser_mock: str = None) -> DocumentParser:
         try:
             parser_cls = cls._PARSER_MAP[service]
         except KeyError as error:
@@ -24,4 +24,4 @@ class DocumentParserFactory:
                 f"No document parser registered for service '{service.value}'."
             ) from error
 
-        return parser_cls(document=document)
+        return parser_cls(document=document, document_parser_mock=document_parser_mock)

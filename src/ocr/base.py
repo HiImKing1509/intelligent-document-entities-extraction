@@ -10,7 +10,7 @@ if TYPE_CHECKING:  # pragma: no cover - only used for type hints
 class DocumentParser(ABC):
     """Base interface for all OCR document parsers."""
 
-    def __init__(self, document: bytes) -> None:
+    def __init__(self, document: Union[bytes, str]) -> None:
         self.document = document
 
     @abstractmethod

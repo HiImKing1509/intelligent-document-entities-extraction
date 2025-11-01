@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-import pickle
 from typing import Optional, Union
 
 import fitz  # PyMuPDF
@@ -9,8 +7,8 @@ from landingai_ade.types.parse_response import ParseResponse
 from loguru import logger
 
 from src.services.landing_ai import LandingAIClient
-
 from src.ocr import DocumentParser
+from src.ocr.mocks.landingai import LandingAIDocumentParserMock
 
 
 class LandingAIDocumentParser(DocumentParser):
@@ -19,10 +17,16 @@ class LandingAIDocumentParser(DocumentParser):
     def __init__(
         self,
         document: bytes,
+        document_parser_mock: Optional[str] = None,
         client: Optional[LandingAIClient] = None,
     ) -> None:
         super().__init__(document)
         self._client = client or LandingAIClient()
+        self._mock_handler: Optional[LandingAIDocumentParserMock] = (
+            LandingAIDocumentParserMock(document_parser_mock)
+            if document_parser_mock
+            else None
+        )
 
     def parse(self, plot: bool = False) -> ParseResponse:
         parsed_response = self._parse_document()
@@ -31,22 +35,23 @@ class LandingAIDocumentParser(DocumentParser):
         return parsed_response
 
     def _parse_document(self) -> ParseResponse:
-        if isinstance(self.document, str):
-            mock_response_path = self._mock_response_path(self.document)
-            if mock_response_path and os.path.exists(mock_response_path):
-                with open(mock_response_path, "rb") as mock_file:
-                    parsed_response = pickle.load(mock_file)
+        if self._mock_handler and self._mock_handler.exists():
+            logger.info(
+                f"Mock parsed response loaded from {self._mock_handler.path}.")
+            return self._mock_handler.load()
+
+        parsed_response = self._client.parse(document=self.document)
+
+        if self._mock_handler:
+            try:
+                self._mock_handler.save(parsed_response)
                 logger.info(
-                    f"Mock parsed response loaded from {mock_response_path}.")
-                return parsed_response
+                    f"Mock parsed response saved to {self._mock_handler.path}.")
+            except Exception as error:  # pragma: no cover - defensive logging
+                logger.warning(
+                    f"Failed to persist LandingAI mock response: {error}")
 
-        return self._client.parse(document=self.document)
-
-    def _mock_response_path(self, document_path: str) -> Optional[str]:
-        if not document_path.lower().endswith(".pdf"):
-            return None
-
-        return document_path.replace(".pdf", ".pkl").replace("Files", "LandingAIParsedMocks")
+        return parsed_response
 
     def _plot_chunks(self, parsed_response: ParseResponse) -> None:
         if not isinstance(parsed_response, ParseResponse):
