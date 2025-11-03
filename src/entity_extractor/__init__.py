@@ -1,3 +1,4 @@
-from src.entity_extractor.entities_extractor import EntitiesExtractor
+from src.entity_extractor.base import EntityExtractor
+from src.entity_extractor.factory import EntityExtractorFactory
 
-__all__ = ["EntitiesExtractor"]
+__all__ = ["EntityExtractor", "EntityExtractorFactory"]

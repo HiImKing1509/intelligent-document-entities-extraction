@@ -1,17 +1,21 @@
-import json
-from typing import Dict, List, Any, Union
-from loguru import logger
+from __future__ import annotations
 
+import json
+from typing import Any, Dict, List, Union
+from loguru import logger
 from core import settings
-from src.models.services import ServiceType, AzureOpenAIModel
+
+from src.models.services import AzureOpenAIModel
+from src.services.llms.azure_openai import AzureOpenAIClient
 from src.processor import StructuredJSON2PydanticConverter
 from src.services.llms.azure_openai.params import AzureOpenAIChatCompletionMessageParam
-from src.services.llms.azure_openai import AzureOpenAIClient
+from src.entity_extractor.base import EntityExtractor
 
 
-class EntitiesExtractor:
+class LandingAIEntityExtractor(EntityExtractor):
+    """Entity extractor for LandingAI service."""
 
-    _LANDING_AI_SYSTEM_PROMPT = (
+    _SYSTEM_PROMPT = (
         "You are a document intelligence AI assistant in entities extraction. "
         "Your task is to identify and extract the required entities from the provided text, and structure your response strictly according to the predefined schema.\n"
         "**Entities extraction instructions:**\n"
@@ -43,17 +47,8 @@ class EntitiesExtractor:
         "Your primary goal is to extract accurate entities from the provided text, and produce clean, structured output ready for downstream processing.\n"
     )
 
-    def __init__(
-            self,
-            contexts: Dict[str, List[Dict[str, Any]]],
-            service: str = ServiceType.LANDING_AI,
-    ) -> None:
-        self.contexts = contexts
-        self.service = service
-        if service == ServiceType.LANDING_AI:
-            self._SYSTEM_PROMPT = self._LANDING_AI_SYSTEM_PROMPT
-        else:
-            raise ValueError(f"Unsupported service type: {service}")
+    def __init__(self, contexts: Dict[str, List[Dict[str, Any]]]) -> None:
+        super().__init__(contexts=contexts)
 
     @staticmethod
     def _post_process_extracted_value(value: Union[str, bool, List[str], List[bool]]) -> Any:
@@ -89,7 +84,8 @@ class EntitiesExtractor:
         """
         extracted_entities = []
         for key, value in json_entity.items():
-            value = EntitiesExtractor._post_process_extracted_value(value)
+            value = LandingAIEntityExtractor._post_process_extracted_value(
+                value)
             if isinstance(value, (str, bool)):
                 entity = {
                     "name": key,
@@ -112,9 +108,7 @@ class EntitiesExtractor:
 
     def extract(self) -> Dict[str, List[Dict[str, Any]]]:
 
-        response = {
-            "steps": []
-        }
+        response: Dict[str, List[Dict[str, Any]]] = {"steps": []}
 
         converter = StructuredJSON2PydanticConverter()
         azure_openai_client = AzureOpenAIClient(
@@ -126,7 +120,7 @@ class EntitiesExtractor:
         steps = self.contexts.get("steps", [])
         if not steps:
             logger.warning("No steps found in contexts for entity extraction.")
-            return None
+            return response
 
         for i, step in enumerate(steps):
             step_name = step.get('name', f'step_{i+1}')
@@ -160,8 +154,12 @@ class EntitiesExtractor:
                         data=gpt_response,
                         verbose=False
                     )
-                    print(f"Context:\n{step.get('context', '')}\n")
-                    print(json.dumps(json_gpt_response, indent=4))
+                    logger.debug("LandingAI context:\n{}",
+                                 step.get("context", ""))
+                    logger.debug(
+                        "LandingAI extraction response:\n{}",
+                        json.dumps(json_gpt_response, indent=4),
+                    )
 
                     response["steps"].append({
                         "step": step.get("name"),
