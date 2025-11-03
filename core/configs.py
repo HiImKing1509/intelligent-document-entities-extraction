@@ -5,7 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     LANDING_AI_API_KEY: str
     AZURE_OPENAI_ENDPOINT: str
+    AZURE_MISTRAL_ENDPOINT: str
     OPENAI_API_KEY: str
+    AZURE_MISTRAL_API_KEY: str
     OPENAI_API_VERSION: str
     TESSERACT_CMD: str
 
