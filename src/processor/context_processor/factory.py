@@ -5,6 +5,7 @@ from typing import Any, Dict, Type
 from src.models.services import ServiceType
 from src.processor.context_processor.base import ContextProcessor
 from src.processor.context_processor._landingai import LandingAIContextProcessor
+from src.processor.context_processor._mistral_document_ai import MistralDAContextProcessor
 
 
 class ContextProcessorFactory:
@@ -12,6 +13,7 @@ class ContextProcessorFactory:
 
     _PROCESSOR_MAP: Dict[ServiceType, Type[ContextProcessor]] = {
         ServiceType.LANDING_AI: LandingAIContextProcessor,
+        ServiceType.MISTRAL_DOCUMENT_AI: MistralDAContextProcessor,
     }
 
     @classmethod
