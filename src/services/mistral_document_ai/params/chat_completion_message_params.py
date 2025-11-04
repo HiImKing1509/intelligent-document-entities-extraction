@@ -26,7 +26,7 @@ class MistralDADocumentAnnotationFormatParam(BaseModel):
     """
     Defines the document annotation schema consumed by the Document AI endpoint.
     """
-    schema: dict = Field(
+    json_schema: dict = Field(
         ...,
         description="JSON schema describing the expected document-level annotations."
     )
@@ -38,7 +38,7 @@ class MistralDADocumentAnnotationFormatParam(BaseModel):
         return {
             "type": "json_schema",
             "json_schema": {
-                "schema": self.schema,
+                "schema": self.json_schema,
                 "name": "document_annotation",
                 "strict": True,
             },
@@ -49,7 +49,7 @@ class MistralDABBoxAnnotationFormatParam(BaseModel):
     """
     Defines the bounding-box annotation schema consumed by the Document AI endpoint.
     """
-    schema: dict = Field(
+    json_schema: dict = Field(
         ...,
         description="JSON schema describing the expected bounding-box annotations."
     )
@@ -61,7 +61,7 @@ class MistralDABBoxAnnotationFormatParam(BaseModel):
         return {
             "type": "json_schema",
             "json_schema": {
-                "schema": self.schema,
+                "schema": self.json_schema,
                 "name": "bbox_annotation",
                 "strict": True,
             },
