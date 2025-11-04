@@ -6,7 +6,6 @@ import fitz
 import requests
 from loguru import logger
 
-from src.models.services import ServiceType
 from src.processor.page_processor import PageRotator, SkewDetector
 
 
@@ -232,31 +231,3 @@ class DocumentPreprocessor(ABC):
     @abstractmethod
     def preprocess(self) -> bytes:
         raise NotImplementedError
-
-
-class LandingAIDocumentPreprocessor(DocumentPreprocessor):
-    def __init__(
-        self,
-        document: Union[str, bytes, None] = None,
-        settings: Optional[PreprocessingSettings] = None,
-    ) -> None:
-        super().__init__(document=document, settings=settings)
-
-    def preprocess(self) -> bytes:
-        document_bytes = self.document_reader(self.document)
-        rotated_document_bytes = self.document_rotator(document_bytes)
-        converted_document_bytes = self.convert_pdf_to_images_to_pdf(
-            rotated_document_bytes)
-        skew_corrected_document_bytes = self.skew_detector(
-            converted_document_bytes)
-        return skew_corrected_document_bytes
-
-
-class DocumentPreprocessorFactory:
-    processor: DocumentPreprocessor
-
-    def __init__(self, service: ServiceType):
-        if service == ServiceType.LANDING_AI:
-            self.processor = LandingAIDocumentPreprocessor
-        else:
-            raise ValueError(f"Unsupported service type: {service}")
