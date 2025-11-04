@@ -7,7 +7,17 @@ import mockSample from "@/mocks/fixtures/super-ongoing-fee-consent-sample-1.json
 const pageSchema = z
   .object({
     page_number: z.number().optional(),
+    index: z.number().optional(),
     image_base64: z.string().optional(),
+    images: z.array(z.string()).optional(),
+    markdown: z.string().optional(),
+    dimensions: z
+      .object({
+        dpi: z.number().optional(),
+        height: z.number().optional(),
+        width: z.number().optional(),
+      })
+      .optional(),
   })
   .passthrough();
 
@@ -22,17 +32,43 @@ const documentResponseSchema = z
   })
   .passthrough();
 
-const responseSchema = z
-  .object({
-    result: documentResponseSchema.optional(),
-    data: documentResponseSchema.optional(),
-    response_json: documentResponseSchema.optional(),
-    pages: pagesSchema,
-    duration_ms: z.number().optional(),
+const responseSchema = documentResponseSchema
+  .extend({
+    result: z.unknown().optional(),
+    data: z.unknown().optional(),
+    response_json: z.unknown().optional(),
+    model: z.string().optional(),
+    document_annotation: z.unknown().optional(),
+    usage_info: z
+      .object({
+        pages_processed: z.number().optional(),
+        doc_size_bytes: z.number().optional(),
+        pages_processed_annotation: z.number().optional(),
+      })
+      .optional(),
   })
   .passthrough();
 
 type DocumentResponse = z.infer<typeof documentResponseSchema>;
+type ApiResponse = z.infer<typeof responseSchema>;
+
+function resolveDocumentPayload(apiResponse: ApiResponse): DocumentResponse {
+  const candidates = [
+    apiResponse.response_json,
+    apiResponse.result,
+    apiResponse.data,
+    apiResponse,
+  ];
+
+  for (const candidate of candidates) {
+    const parsedCandidate = documentResponseSchema.safeParse(candidate);
+    if (parsedCandidate.success) {
+      return parsedCandidate.data;
+    }
+  }
+
+  return documentResponseSchema.parse({});
+}
 
 function buildRequestBody(payload: DocumentProcessPayload) {
   return {
@@ -79,30 +115,37 @@ export async function processDocumentViaApi(
   }
 
   const json = await response.json();
+  console.info("[processDocumentViaApi] raw response:", json);
+
   const parsed = responseSchema.safeParse(json);
 
   if (!parsed.success) {
     throw new Error("Received an unexpected response from the API");
   }
 
-  const responseJsonPayload = parsed.data.response_json ?? null;
+  const apiResponse = parsed.data;
+  const responseJsonPayload = documentResponseSchema.safeParse(apiResponse.response_json ?? null);
   // Emit the structured payload so we can trace Mistral's answer in the command prompt.
-  console.info("[processDocumentViaApi] response_json:", responseJsonPayload);
+  console.info(
+    "[processDocumentViaApi] response_json:",
+    responseJsonPayload.success ? responseJsonPayload.data : apiResponse.response_json ?? null,
+  );
 
-  const payloadResult: DocumentResponse =
-    (responseJsonPayload ?? parsed.data.result ?? parsed.data.data ?? {}) as DocumentResponse;
+  const payloadResult = resolveDocumentPayload(apiResponse);
 
-  const pagesFromPayload = Array.isArray(payloadResult?.pages) ? payloadResult?.pages : undefined;
-  const fallbackPages = parsed.data.pages ?? [];
+  const pagesFromPayload = Array.isArray(payloadResult.pages) ? payloadResult.pages : [];
+  const fallbackPages = Array.isArray(apiResponse.pages) ? apiResponse.pages : [];
 
-  const pages = (pagesFromPayload ?? fallbackPages).map((page, index) => ({
+  const pagesSource = pagesFromPayload.length > 0 ? pagesFromPayload : fallbackPages;
+
+  const pages = pagesSource.map((page, index) => ({
     id: crypto.randomUUID(),
-    pageNumber: page?.page_number ?? index + 1,
-    base64: page?.image_base64 ?? "",
+    pageNumber: page?.page_number ?? page?.index ?? index + 1,
+    base64: page?.image_base64 ?? page?.images?.[0] ?? "",
   }));
 
   const structuredJson = (() => {
-    if (!payloadResult || payloadResult.json == null) {
+    if (payloadResult.json == null) {
       return {};
     }
 
@@ -114,14 +157,22 @@ export async function processDocumentViaApi(
   })();
 
   const durationFromResponse =
-    payloadResult?.duration_ms ?? parsed.data.duration_ms ?? performance.now() - startedAt;
+    payloadResult.duration_ms ?? apiResponse.duration_ms ?? performance.now() - startedAt;
+
+  const fallbackMarkdown = pagesSource
+    .map((page) => page?.markdown?.trim())
+    .filter((value): value is string => Boolean(value))
+    .join("\n\n---\n\n");
+
+  const resolvedMarkdown =
+    payloadResult.markdown ?? (fallbackMarkdown.length > 0 ? fallbackMarkdown : undefined);
 
   return {
     id: crypto.randomUUID(),
     fileName: payload.fileName,
     uploadedAt: new Date().toISOString(),
     extraction: {
-      markdown: payloadResult.markdown ?? "_No markdown content returned._",
+      markdown: resolvedMarkdown ?? "_No markdown content returned._",
       json: structuredJson,
       pages: pages.filter((page) => Boolean(page.base64)),
     },
