@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -20,6 +22,52 @@ class MistralDADocumentParam(BaseModel):
         }
 
 
+class MistralDADocumentAnnotationFormatParam(BaseModel):
+    """
+    Defines the document annotation schema consumed by the Document AI endpoint.
+    """
+    schema: dict = Field(
+        ...,
+        description="JSON schema describing the expected document-level annotations."
+    )
+
+    def to_payload(self) -> dict:
+        """
+        Serialise the annotation schema to the format required by the API.
+        """
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "schema": self.schema,
+                "name": "document_annotation",
+                "strict": True,
+            },
+        }
+
+
+class MistralDABBoxAnnotationFormatParam(BaseModel):
+    """
+    Defines the bounding-box annotation schema consumed by the Document AI endpoint.
+    """
+    schema: dict = Field(
+        ...,
+        description="JSON schema describing the expected bounding-box annotations."
+    )
+
+    def to_payload(self) -> dict:
+        """
+        Serialise the bounding-box annotation schema to the format required by the API.
+        """
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "schema": self.schema,
+                "name": "bbox_annotation",
+                "strict": True,
+            },
+        }
+
+
 class MistralDAChatCompletionMessageParam(BaseModel):
     """
     Parameters required to invoke the Mistral Document AI endpoint.
@@ -32,6 +80,14 @@ class MistralDAChatCompletionMessageParam(BaseModel):
         ...,
         description="Base64 document payload definition consumed by the OCR endpoint."
     )
+    document_annotation_format: Optional[MistralDADocumentAnnotationFormatParam] = Field(
+        default=None,
+        description="Optional JSON schema describing the document-level annotations expected from the model."
+    )
+    bbox_annotation_format: Optional[MistralDABBoxAnnotationFormatParam] = Field(
+        default=None,
+        description="Optional JSON schema describing the bounding-box annotations expected from the model."
+    )
     include_image_base64: bool = Field(
         default=True,
         description="Controls whether rendered page images are embedded in the response."
@@ -41,8 +97,13 @@ class MistralDAChatCompletionMessageParam(BaseModel):
         """
         Convert the parameter model into a JSON-serialisable payload for the API.
         """
-        return {
+        payload = {
             "model": self.model,
             "document": self.document.to_payload(),
             "include_image_base64": self.include_image_base64,
         }
+        if self.document_annotation_format is not None:
+            payload["document_annotation_format"] = self.document_annotation_format.to_payload()
+        if self.bbox_annotation_format is not None:
+            payload["bbox_annotation_format"] = self.bbox_annotation_format.to_payload()
+        return payload
