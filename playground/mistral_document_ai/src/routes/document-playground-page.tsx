@@ -11,7 +11,7 @@ import {
   CardDescription,
   CardFooter,
   CardHeader,
-  CardTitle
+  CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -23,7 +23,7 @@ import {
   dataUrlToObjectUrl,
   isPdf,
   readFileAsBase64,
-  revokeFileObjectUrl
+  revokeFileObjectUrl,
 } from "@/lib/file";
 import { createDocumentProcessPayload } from "@/features/document/api/process-document";
 import { useProcessDocument } from "@/features/document/hooks/use-process-document";
@@ -42,8 +42,8 @@ const documentFormSchema = z.object({
         return file ? isPdf(file) : false;
       },
       {
-        message: "Only PDF files are supported."
-      }
+        message: "Only PDF files are supported.",
+      },
     )
     .refine(
       (files) => {
@@ -55,9 +55,9 @@ const documentFormSchema = z.object({
         return sizeInMb <= MAX_FILE_SIZE_MB;
       },
       {
-        message: `File size must be under ${MAX_FILE_SIZE_MB} MB.`
-      }
-    )
+        message: `File size must be under ${MAX_FILE_SIZE_MB} MB.`,
+      },
+    ),
 });
 
 type DocumentFormValues = z.infer<typeof documentFormSchema>;
@@ -65,7 +65,7 @@ type DocumentFormValues = z.infer<typeof documentFormSchema>;
 export function DocumentPlaygroundPage() {
   const { history, addDocument, clearHistory } = useDocumentHistory();
   const [activeDocument, setActiveDocument] = useState<ProcessedDocument | null>(
-    history[0] ?? null
+    history[0] ?? null,
   );
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -78,28 +78,23 @@ export function DocumentPlaygroundPage() {
     setValue,
     trigger,
     reset,
-    resetField
+    resetField,
   } = useForm<DocumentFormValues>({
     resolver: zodResolver(documentFormSchema),
-    mode: "onSubmit"
+    mode: "onSubmit",
   });
   const documentField = register("document");
 
-  const {
-    mutateAsync: processDocument,
-    isPending: isProcessing
-  } = useProcessDocument({
+  const { mutateAsync: processDocument, isPending: isProcessing } = useProcessDocument({
     onSuccess: (doc) => {
       addDocument(doc);
       setActiveDocument(doc);
       reset();
-      setSelectedFile(null);
-      setPreviewUrl(null);
       resetField("document");
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
-    }
+    },
   });
 
   useEffect(() => {
@@ -143,7 +138,18 @@ export function DocumentPlaygroundPage() {
         fileInputRef.current.value = "";
       }
     },
-    [fileInputRef, isPdf, resetField, setSelectedFile, setValue, trigger]
+    [fileInputRef, isPdf, resetField, setSelectedFile, setValue, trigger],
+  );
+
+  const handleDocumentSelect = useCallback(
+    (doc: ProcessedDocument) => {
+      setActiveDocument(doc);
+
+      if (selectedFile && doc.fileName !== selectedFile.name) {
+        setSelectedFile(null);
+      }
+    },
+    [selectedFile],
   );
 
   const onSubmit = handleSubmit(async (values) => {
@@ -237,7 +243,7 @@ export function DocumentPlaygroundPage() {
       <HistoryPanel
         history={history}
         activeDocumentId={activeDocument?.id ?? null}
-        onSelect={setActiveDocument}
+        onSelect={handleDocumentSelect}
         onClear={clearHistory}
       />
     </div>
@@ -279,7 +285,7 @@ function DropArea({ onBrowse, onDropFiles, activeFile, isProcessing }: DropAreaP
       className={cn(
         "flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-neutral-800 bg-neutral-900/40 px-6 py-12 text-center transition hover:border-primary/60 hover:bg-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950",
         dragOver && "border-primary/80 bg-neutral-900/60",
-        isProcessing && "pointer-events-none opacity-50"
+        isProcessing && "pointer-events-none opacity-50",
       )}
     >
       <FileStack className="mb-4 h-10 w-10 text-primary" />
@@ -321,7 +327,7 @@ function DocumentPreviewCard({ previewUrl, document }: DocumentPreviewProps) {
   const sourceUrl = previewUrl ?? documentUrl ?? null;
   const thumbnails = document?.extraction.pages ?? [];
   const previewHeightStyle = {
-    height: `clamp(360px, calc(100vh - 280px), ${PREVIEW_HEIGHT_PX}px)`
+    height: `clamp(360px, calc(100vh - 280px), ${PREVIEW_HEIGHT_PX}px)`,
   };
 
   return (
@@ -339,7 +345,12 @@ function DocumentPreviewCard({ previewUrl, document }: DocumentPreviewProps) {
               className="overflow-hidden rounded-lg border border-neutral-900 bg-neutral-900"
               style={previewHeightStyle}
             >
-              <object title="PDF preview" data={sourceUrl} type="application/pdf" className="h-full w-full">
+              <object
+                title="PDF preview"
+                data={sourceUrl}
+                type="application/pdf"
+                className="h-full w-full"
+              >
                 <div className="flex h-full w-full items-center justify-center bg-neutral-900 text-sm text-neutral-400">
                   Unable to preview PDF.{" "}
                   <a className="ml-2 underline" href={sourceUrl} target="_blank" rel="noreferrer">
@@ -362,7 +373,9 @@ function DocumentPreviewCard({ previewUrl, document }: DocumentPreviewProps) {
                         alt={`Page ${page.pageNumber}`}
                         className="w-full object-cover"
                       />
-                      <div className="px-2 py-1 text-xs text-neutral-500">Page {page.pageNumber}</div>
+                      <div className="px-2 py-1 text-xs text-neutral-500">
+                        Page {page.pageNumber}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -389,7 +402,7 @@ type ExtractionResultsProps = {
 
 function ExtractionResultsCard({ document }: ExtractionResultsProps) {
   const previewHeightStyle = {
-    height: `clamp(360px, calc(100vh - 280px), ${PREVIEW_HEIGHT_PX}px)`
+    height: `clamp(360px, calc(100vh - 280px), ${PREVIEW_HEIGHT_PX}px)`,
   };
 
   return (
@@ -490,7 +503,7 @@ function HistoryPanel({ history, activeDocumentId, onSelect, onClear }: HistoryP
                   onClick={() => onSelect(doc)}
                   className={cn(
                     "w-full rounded-lg border border-transparent bg-neutral-900/60 px-4 py-3 text-left transition hover:border-primary/40 hover:bg-neutral-900",
-                    isActive && "border-primary/60 bg-primary/10"
+                    isActive && "border-primary/60 bg-primary/10",
                   )}
                 >
                   <div className="flex items-center justify-between text-sm font-medium text-neutral-100">
@@ -519,7 +532,7 @@ function EmptyState({ title, description, className }: EmptyStateProps) {
     <div
       className={cn(
         "flex flex-col items-center justify-center rounded-lg border border-neutral-900/80 bg-neutral-900/40 px-6 py-12 text-center",
-        className
+        className,
       )}
     >
       <p className="text-base font-medium text-neutral-200">{title}</p>
