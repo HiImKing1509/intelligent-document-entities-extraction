@@ -4,44 +4,49 @@ import { getApiKey, getMistralEndpoint, shouldUseMocks } from "@/lib/env";
 import type { DocumentProcessPayload, ProcessedDocument } from "@/types/document";
 import mockSample from "@/mocks/fixtures/super-ongoing-fee-consent-sample-1.json";
 
+const pageSchema = z
+  .object({
+    page_number: z.number().optional(),
+    image_base64: z.string().optional(),
+  })
+  .passthrough();
+
+const pagesSchema = z.array(pageSchema).optional();
+
 const documentResponseSchema = z
   .object({
     markdown: z.string().optional(),
-    json: z.union([z.record(z.any()), z.array(z.any())]).optional(),
-    pages: z
-      .array(
-        z
-          .object({
-            page_number: z.number().optional(),
-            image_base64: z.string().optional()
-          })
-          .passthrough()
-      )
-      .optional(),
-    duration_ms: z.number().optional()
+    json: z.union([z.record(z.any()), z.array(z.any()), z.null()]).optional(),
+    pages: pagesSchema,
+    duration_ms: z.number().optional(),
   })
   .passthrough();
 
 const responseSchema = z
   .object({
     result: documentResponseSchema.optional(),
-    data: documentResponseSchema.optional()
+    data: documentResponseSchema.optional(),
+    response_json: documentResponseSchema.optional(),
+    pages: pagesSchema,
+    duration_ms: z.number().optional(),
   })
   .passthrough();
+
+type DocumentResponse = z.infer<typeof documentResponseSchema>;
 
 function buildRequestBody(payload: DocumentProcessPayload) {
   return {
     model: "mistral-document-ai-2505",
     document: {
       type: "document_url",
-      document_url: createDataUrl(payload.documentBase64, payload.mimeType)
+      document_url: createDataUrl(payload.documentBase64, payload.mimeType),
     },
-    include_image_base64: payload.includeImageBase64 ?? true
+    include_image_base64: payload.includeImageBase64 ?? true,
   };
 }
 
 export async function processDocumentViaApi(
-  payload: DocumentProcessPayload
+  payload: DocumentProcessPayload,
 ): Promise<ProcessedDocument> {
   const requestBody = buildRequestBody(payload);
   const useMocks = shouldUseMocks();
@@ -53,7 +58,7 @@ export async function processDocumentViaApi(
   const endpoint = getMistralEndpoint();
 
   const headers: HeadersInit = {
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
   };
 
   const apiKey = getApiKey();
@@ -65,7 +70,7 @@ export async function processDocumentViaApi(
   const response = await fetch(endpoint, {
     method: "POST",
     headers,
-    body: JSON.stringify(requestBody)
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -80,14 +85,36 @@ export async function processDocumentViaApi(
     throw new Error("Received an unexpected response from the API");
   }
 
-  const payloadResult = parsed.data.result ?? parsed.data.data ?? (json as Record<string, unknown>);
+  const responseJsonPayload = parsed.data.response_json ?? null;
+  // Emit the structured payload so we can trace Mistral's answer in the command prompt.
+  console.info("[processDocumentViaApi] response_json:", responseJsonPayload);
 
-  const pages =
-    payloadResult.pages?.map((page, index) => ({
-      id: crypto.randomUUID(),
-      pageNumber: page.page_number ?? index + 1,
-      base64: page.image_base64 ?? ""
-    })) ?? [];
+  const payloadResult: DocumentResponse =
+    (responseJsonPayload ?? parsed.data.result ?? parsed.data.data ?? {}) as DocumentResponse;
+
+  const pagesFromPayload = Array.isArray(payloadResult?.pages) ? payloadResult?.pages : undefined;
+  const fallbackPages = parsed.data.pages ?? [];
+
+  const pages = (pagesFromPayload ?? fallbackPages).map((page, index) => ({
+    id: crypto.randomUUID(),
+    pageNumber: page?.page_number ?? index + 1,
+    base64: page?.image_base64 ?? "",
+  }));
+
+  const structuredJson = (() => {
+    if (!payloadResult || payloadResult.json == null) {
+      return {};
+    }
+
+    if (Array.isArray(payloadResult.json)) {
+      return { data: payloadResult.json };
+    }
+
+    return payloadResult.json as Record<string, unknown>;
+  })();
+
+  const durationFromResponse =
+    payloadResult?.duration_ms ?? parsed.data.duration_ms ?? performance.now() - startedAt;
 
   return {
     id: crypto.randomUUID(),
@@ -95,11 +122,11 @@ export async function processDocumentViaApi(
     uploadedAt: new Date().toISOString(),
     extraction: {
       markdown: payloadResult.markdown ?? "_No markdown content returned._",
-      json: (payloadResult.json as Record<string, unknown>) ?? {},
-      pages: pages.filter((page) => Boolean(page.base64))
+      json: structuredJson,
+      pages: pages.filter((page) => Boolean(page.base64)),
     },
-    durationMs: Math.round(performance.now() - startedAt),
-    documentDataUrl: createDataUrl(payload.documentBase64, payload.mimeType)
+    durationMs: Math.round(durationFromResponse),
+    documentDataUrl: createDataUrl(payload.documentBase64, payload.mimeType),
   };
 }
 
@@ -107,7 +134,7 @@ type MockResponse = typeof mockSample;
 
 function buildMockProcessedDocument(
   payload: DocumentProcessPayload,
-  mock: MockResponse
+  mock: MockResponse,
 ): ProcessedDocument {
   const concatenatedMarkdown = mock.pages.map((page) => page.markdown.trim()).join("\n\n---\n\n");
   const pages =
@@ -115,7 +142,7 @@ function buildMockProcessedDocument(
       ?.map((page, index) => ({
         id: crypto.randomUUID(),
         pageNumber: index + 1,
-        base64: page.images?.[0] ?? ""
+        base64: page.images?.[0] ?? "",
       }))
       .filter((page) => Boolean(page.base64)) ?? [];
 
@@ -126,10 +153,10 @@ function buildMockProcessedDocument(
     extraction: {
       markdown: concatenatedMarkdown,
       json: mock,
-      pages
+      pages,
     },
     durationMs: Math.round(Math.random() * 500 + 900),
-    documentDataUrl: createDataUrl(payload.documentBase64, payload.mimeType)
+    documentDataUrl: createDataUrl(payload.documentBase64, payload.mimeType),
   };
 }
 
@@ -138,6 +165,6 @@ export function createDocumentProcessPayload(file: File, base64: string): Docume
     documentBase64: base64,
     fileName: file.name,
     mimeType: file.type || "application/pdf",
-    includeImageBase64: true
+    includeImageBase64: true,
   };
 }
