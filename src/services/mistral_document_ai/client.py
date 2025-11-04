@@ -52,7 +52,7 @@ class MistralDocumentAIClient:
                 "Failed to reach Mistral Document AI service") from exc
 
         try:
-            return response.json()
+            return response
         except ValueError as exc:
             raise RuntimeError(
                 "Mistral Document AI response could not be decoded as JSON") from exc

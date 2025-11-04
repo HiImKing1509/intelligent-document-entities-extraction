@@ -6,6 +6,7 @@ from src.models.services import ServiceType
 
 from src.ocr.base import DocumentParser
 from src.ocr.landingai_document_parser import LandingAIDocumentParser
+from src.ocr._mistral_document_ai import MistralDocumentAIParser
 
 
 class DocumentParserFactory:
@@ -13,6 +14,7 @@ class DocumentParserFactory:
 
     _PARSER_MAP: Dict[ServiceType, Type[DocumentParser]] = {
         ServiceType.LANDING_AI: LandingAIDocumentParser,
+        ServiceType.MISTRAL_DOCUMENT_AI: MistralDocumentAIParser,
     }
 
     @classmethod

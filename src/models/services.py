@@ -3,8 +3,13 @@ from enum import Enum
 
 class ServiceType(str, Enum):
     LANDING_AI = "LandingAI"
+    MISTRAL_DOCUMENT_AI = "MistralDocumentAI"
     AZURE_OPENAI = "AzureOpenAI"
     GOOGLE_GEMINI = "GoogleGemini"
+
+
+class OCRModel(str, Enum):
+    pass
 
 
 class LLMModel(str, Enum):
@@ -15,3 +20,7 @@ class AzureOpenAIModel(LLMModel):
     GPT_4O = "gpt-4o"
     GPT_4_1 = "gpt-4.1"
     GPT_5 = "gpt-5"
+
+
+class AzureMistralDocumentAIModel:
+    MISTRAL_DOCUMENT_AI_LATEST = "mistral-document-ai-2505"
