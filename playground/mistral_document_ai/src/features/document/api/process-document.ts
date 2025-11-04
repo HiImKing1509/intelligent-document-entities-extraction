@@ -1,74 +1,26 @@
-import { z } from "zod";
 import { createDataUrl } from "@/lib/file";
 import { getApiKey, getMistralEndpoint, shouldUseMocks } from "@/lib/env";
 import type { DocumentProcessPayload, ProcessedDocument } from "@/types/document";
 import mockSample from "@/mocks/fixtures/super-ongoing-fee-consent-sample-1.json";
 
-const pageSchema = z
-  .object({
-    page_number: z.number().optional(),
-    index: z.number().optional(),
-    image_base64: z.string().optional(),
-    images: z.array(z.string()).optional(),
-    markdown: z.string().optional(),
-    dimensions: z
-      .object({
-        dpi: z.number().optional(),
-        height: z.number().optional(),
-        width: z.number().optional(),
-      })
-      .optional(),
-  })
-  .passthrough();
+type DocumentApiPage = {
+  page_number?: number;
+  index?: number;
+  image_base64?: string;
+  images?: string[];
+  markdown?: string;
+  dimensions?: {
+    dpi?: number;
+    height?: number;
+    width?: number;
+  };
+};
 
-const pagesSchema = z.array(pageSchema).optional();
-
-const documentResponseSchema = z
-  .object({
-    markdown: z.string().optional(),
-    json: z.union([z.record(z.any()), z.array(z.any()), z.null()]).optional(),
-    pages: pagesSchema,
-    duration_ms: z.number().optional(),
-  })
-  .passthrough();
-
-const responseSchema = documentResponseSchema
-  .extend({
-    result: z.unknown().optional(),
-    data: z.unknown().optional(),
-    response_json: z.unknown().optional(),
-    model: z.string().optional(),
-    document_annotation: z.unknown().optional(),
-    usage_info: z
-      .object({
-        pages_processed: z.number().optional(),
-        doc_size_bytes: z.number().optional(),
-        pages_processed_annotation: z.number().optional(),
-      })
-      .optional(),
-  })
-  .passthrough();
-
-type DocumentResponse = z.infer<typeof documentResponseSchema>;
-type ApiResponse = z.infer<typeof responseSchema>;
-
-function resolveDocumentPayload(apiResponse: ApiResponse): DocumentResponse {
-  const candidates = [
-    apiResponse.response_json,
-    apiResponse.result,
-    apiResponse.data,
-    apiResponse,
-  ];
-
-  for (const candidate of candidates) {
-    const parsedCandidate = documentResponseSchema.safeParse(candidate);
-    if (parsedCandidate.success) {
-      return parsedCandidate.data;
-    }
-  }
-
-  return documentResponseSchema.parse({});
-}
+type DocumentApiResponse = Record<string, unknown> & {
+  pages?: DocumentApiPage[];
+  markdown?: string;
+  duration_ms?: number;
+};
 
 function buildRequestBody(payload: DocumentProcessPayload) {
   return {
@@ -117,64 +69,46 @@ export async function processDocumentViaApi(
   const json = await response.json();
   console.info("[processDocumentViaApi] raw response:", json);
 
-  const parsed = responseSchema.safeParse(json);
+  const apiResponse = (json ?? {}) as DocumentApiResponse;
+  const pagesFromResponse = Array.isArray(apiResponse.pages) ? apiResponse.pages : [];
 
-  if (!parsed.success) {
-    throw new Error("Received an unexpected response from the API");
-  }
+  const processedPages = pagesFromResponse
+    .map((page, index) => ({
+      id: crypto.randomUUID(),
+      pageNumber: page?.page_number ?? page?.index ?? index + 1,
+      base64: page?.image_base64 ?? page?.images?.[0] ?? "",
+    }))
+    .filter((page) => Boolean(page.base64));
 
-  const apiResponse = parsed.data;
-  const responseJsonPayload = documentResponseSchema.safeParse(apiResponse.response_json ?? null);
-  // Emit the structured payload so we can trace Mistral's answer in the command prompt.
-  console.info(
-    "[processDocumentViaApi] response_json:",
-    responseJsonPayload.success ? responseJsonPayload.data : apiResponse.response_json ?? null,
-  );
-
-  const payloadResult = resolveDocumentPayload(apiResponse);
-
-  const pagesFromPayload = Array.isArray(payloadResult.pages) ? payloadResult.pages : [];
-  const fallbackPages = Array.isArray(apiResponse.pages) ? apiResponse.pages : [];
-
-  const pagesSource = pagesFromPayload.length > 0 ? pagesFromPayload : fallbackPages;
-
-  const pages = pagesSource.map((page, index) => ({
-    id: crypto.randomUUID(),
-    pageNumber: page?.page_number ?? page?.index ?? index + 1,
-    base64: page?.image_base64 ?? page?.images?.[0] ?? "",
-  }));
-
-  const structuredJson = (() => {
-    if (payloadResult.json == null) {
-      return {};
-    }
-
-    if (Array.isArray(payloadResult.json)) {
-      return { data: payloadResult.json };
-    }
-
-    return payloadResult.json as Record<string, unknown>;
-  })();
-
-  const durationFromResponse =
-    payloadResult.duration_ms ?? apiResponse.duration_ms ?? performance.now() - startedAt;
-
-  const fallbackMarkdown = pagesSource
+  const fallbackMarkdown = pagesFromResponse
     .map((page) => page?.markdown?.trim())
     .filter((value): value is string => Boolean(value))
     .join("\n\n---\n\n");
 
+  const normalizedMarkdown =
+    typeof apiResponse.markdown === "string" ? apiResponse.markdown.trim() : "";
+
   const resolvedMarkdown =
-    payloadResult.markdown ?? (fallbackMarkdown.length > 0 ? fallbackMarkdown : undefined);
+    normalizedMarkdown.length > 0 ? normalizedMarkdown : fallbackMarkdown;
+
+  const structuredJson: Record<string, unknown> = { ...apiResponse };
+
+  const durationFromResponse =
+    typeof apiResponse.duration_ms === "number"
+      ? apiResponse.duration_ms
+      : performance.now() - startedAt;
+
+  const finalMarkdown =
+    resolvedMarkdown.length > 0 ? resolvedMarkdown : "_No markdown content returned._";
 
   return {
     id: crypto.randomUUID(),
     fileName: payload.fileName,
     uploadedAt: new Date().toISOString(),
     extraction: {
-      markdown: resolvedMarkdown ?? "_No markdown content returned._",
+      markdown: finalMarkdown,
       json: structuredJson,
-      pages: pages.filter((page) => Boolean(page.base64)),
+      pages: processedPages,
     },
     durationMs: Math.round(durationFromResponse),
     documentDataUrl: createDataUrl(payload.documentBase64, payload.mimeType),
