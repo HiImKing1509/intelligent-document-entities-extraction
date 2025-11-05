@@ -31,7 +31,8 @@ import { useDocumentHistory } from "@/features/document/hooks/use-document-histo
 import type { ProcessedDocument } from "@/types/document";
 
 const MAX_FILE_SIZE_MB = 12;
-const PREVIEW_HEIGHT_PX = 760;
+const PREVIEW_HEIGHT_PX = 840;
+const PANEL_HEIGHT_CSS_VALUE = `clamp(420px, calc(100vh - 260px), ${PREVIEW_HEIGHT_PX}px)`;
 const documentFormSchema = z.object({
   document: z
     .custom<FileList>()
@@ -327,18 +328,21 @@ function DocumentPreviewCard({ previewUrl, document }: DocumentPreviewProps) {
   const sourceUrl = previewUrl ?? documentUrl ?? null;
   const thumbnails = document?.extraction.pages ?? [];
   const previewHeightStyle = {
-    height: `clamp(360px, calc(100vh - 280px), ${PREVIEW_HEIGHT_PX}px)`,
+    height: PANEL_HEIGHT_CSS_VALUE,
   };
 
   return (
-    <Card className="flex flex-col border-neutral-900/80 bg-neutral-950/80">
+    <Card
+      className="flex h-full flex-col border-neutral-900/80 bg-neutral-950/80"
+      style={{ minHeight: PANEL_HEIGHT_CSS_VALUE }}
+    >
       <CardHeader>
         <CardTitle className="text-lg">Original document</CardTitle>
         <CardDescription className="text-neutral-400">
           The uploaded PDF is rendered in-browser. No document is persisted on the server.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+      <CardContent className="flex flex-1 flex-col gap-4">
         {sourceUrl ? (
           <>
             <div
@@ -383,7 +387,7 @@ function DocumentPreviewCard({ previewUrl, document }: DocumentPreviewProps) {
             )}
           </>
         ) : (
-          <div style={previewHeightStyle} className="flex items-center justify-center">
+          <div style={previewHeightStyle} className="flex flex-1 items-center justify-center">
             <EmptyState
               title="Upload a PDF document to preview it here"
               description="You can also revisit previously processed documents from the history panel below."
@@ -402,11 +406,14 @@ type ExtractionResultsProps = {
 
 function ExtractionResultsCard({ document }: ExtractionResultsProps) {
   const previewHeightStyle = {
-    height: `clamp(360px, calc(100vh - 280px), ${PREVIEW_HEIGHT_PX}px)`,
+    height: PANEL_HEIGHT_CSS_VALUE,
   };
 
   return (
-    <Card className="flex flex-col border-neutral-900/80 bg-neutral-950/80">
+    <Card
+      className="flex h-full flex-col border-neutral-900/80 bg-neutral-950/80"
+      style={{ minHeight: PANEL_HEIGHT_CSS_VALUE }}
+    >
       <CardHeader>
         <CardTitle className="text-lg">Extraction results</CardTitle>
         <CardDescription className="text-neutral-400">
@@ -414,14 +421,14 @@ function ExtractionResultsCard({ document }: ExtractionResultsProps) {
           integrations.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+      <CardContent className="flex flex-1 flex-col gap-4">
         {document ? (
-          <Tabs defaultValue="markdown" className="flex flex-col gap-4">
+          <Tabs defaultValue="markdown" className="flex flex-1 flex-col gap-4">
             <TabsList>
               <TabsTrigger value="markdown">Markdown</TabsTrigger>
               <TabsTrigger value="json">JSON</TabsTrigger>
             </TabsList>
-            <TabsContent value="markdown" className="h-full" style={previewHeightStyle}>
+            <TabsContent value="markdown" className="flex-1" style={previewHeightStyle}>
               <ScrollArea className="h-full">
                 <article className="prose prose-invert max-w-none">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -430,7 +437,7 @@ function ExtractionResultsCard({ document }: ExtractionResultsProps) {
                 </article>
               </ScrollArea>
             </TabsContent>
-            <TabsContent value="json" className="h-full" style={previewHeightStyle}>
+            <TabsContent value="json" className="flex-1" style={previewHeightStyle}>
               <ScrollArea className="h-full">
                 <pre className="whitespace-pre-wrap rounded-md bg-neutral-900/80 p-4 text-xs text-neutral-100">
                   {JSON.stringify(document.extraction.json, null, 2)}
@@ -439,7 +446,7 @@ function ExtractionResultsCard({ document }: ExtractionResultsProps) {
             </TabsContent>
           </Tabs>
         ) : (
-          <div style={previewHeightStyle} className="flex items-center justify-center">
+          <div style={previewHeightStyle} className="flex flex-1 items-center justify-center">
             <EmptyState
               title="No results yet"
               description="Process a PDF document to view markdown and JSON outputs side by side."
