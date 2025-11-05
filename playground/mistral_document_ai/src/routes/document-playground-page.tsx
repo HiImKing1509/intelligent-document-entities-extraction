@@ -327,27 +327,24 @@ function DocumentPreviewCard({ previewUrl, document }: DocumentPreviewProps) {
 
   const sourceUrl = previewUrl ?? documentUrl ?? null;
   const thumbnails = document?.extraction.pages ?? [];
-  const previewHeightStyle = {
-    height: PANEL_HEIGHT_CSS_VALUE,
-  };
+  const panelHeightStyle = { height: PANEL_HEIGHT_CSS_VALUE };
 
   return (
     <Card
       className="flex h-full flex-col border-neutral-900/80 bg-neutral-950/80"
-      style={{ minHeight: PANEL_HEIGHT_CSS_VALUE }}
+      style={panelHeightStyle}
     >
-      <CardHeader>
+      <CardHeader className="shrink-0">
         <CardTitle className="text-lg">Original document</CardTitle>
         <CardDescription className="text-neutral-400">
           The uploaded PDF is rendered in-browser. No document is persisted on the server.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-4">
+      <CardContent className="flex flex-1 min-h-0 flex-col gap-4 overflow-hidden">
         {sourceUrl ? (
-          <>
+          <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-hidden">
             <div
-              className="overflow-hidden rounded-lg border border-neutral-900 bg-neutral-900"
-              style={previewHeightStyle}
+              className="flex-1 overflow-hidden rounded-lg border border-neutral-900 bg-neutral-900"
             >
               <object
                 title="PDF preview"
@@ -364,7 +361,7 @@ function DocumentPreviewCard({ previewUrl, document }: DocumentPreviewProps) {
               </object>
             </div>
             {thumbnails.length > 0 && (
-              <div>
+              <div className="shrink-0">
                 <h4 className="mb-2 text-sm font-semibold text-neutral-200">Page snapshots</h4>
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
                   {thumbnails.map((page) => (
@@ -385,9 +382,9 @@ function DocumentPreviewCard({ previewUrl, document }: DocumentPreviewProps) {
                 </div>
               </div>
             )}
-          </>
+          </div>
         ) : (
-          <div style={previewHeightStyle} className="flex flex-1 items-center justify-center">
+          <div className="flex flex-1 items-center justify-center overflow-hidden rounded-lg border border-neutral-900 bg-neutral-900">
             <EmptyState
               title="Upload a PDF document to preview it here"
               description="You can also revisit previously processed documents from the history panel below."
@@ -405,30 +402,31 @@ type ExtractionResultsProps = {
 };
 
 function ExtractionResultsCard({ document }: ExtractionResultsProps) {
-  const previewHeightStyle = {
-    height: PANEL_HEIGHT_CSS_VALUE,
-  };
+  const panelHeightStyle = { height: PANEL_HEIGHT_CSS_VALUE };
 
   return (
     <Card
       className="flex h-full flex-col border-neutral-900/80 bg-neutral-950/80"
-      style={{ minHeight: PANEL_HEIGHT_CSS_VALUE }}
+      style={panelHeightStyle}
     >
-      <CardHeader>
+      <CardHeader className="shrink-0">
         <CardTitle className="text-lg">Extraction results</CardTitle>
         <CardDescription className="text-neutral-400">
           Explore the markdown friendly output or inspect the raw JSON payload for downstream
           integrations.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-4">
+      <CardContent className="flex flex-1 min-h-0 flex-col gap-4 overflow-hidden">
         {document ? (
-          <Tabs defaultValue="markdown" className="flex flex-1 flex-col gap-4">
-            <TabsList>
+          <Tabs
+            defaultValue="markdown"
+            className="flex flex-1 min-h-0 flex-col gap-4 overflow-hidden"
+          >
+            <TabsList className="shrink-0">
               <TabsTrigger value="markdown">Markdown</TabsTrigger>
               <TabsTrigger value="json">JSON</TabsTrigger>
             </TabsList>
-            <TabsContent value="markdown" className="flex-1" style={previewHeightStyle}>
+            <TabsContent value="markdown" className="flex flex-1 min-h-0 overflow-hidden">
               <ScrollArea className="h-full">
                 <article className="prose prose-invert max-w-none">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -437,7 +435,7 @@ function ExtractionResultsCard({ document }: ExtractionResultsProps) {
                 </article>
               </ScrollArea>
             </TabsContent>
-            <TabsContent value="json" className="flex-1" style={previewHeightStyle}>
+            <TabsContent value="json" className="flex flex-1 min-h-0 overflow-hidden">
               <ScrollArea className="h-full">
                 <pre className="whitespace-pre-wrap rounded-md bg-neutral-900/80 p-4 text-xs text-neutral-100">
                   {JSON.stringify(document.extraction.json, null, 2)}
@@ -446,7 +444,7 @@ function ExtractionResultsCard({ document }: ExtractionResultsProps) {
             </TabsContent>
           </Tabs>
         ) : (
-          <div style={previewHeightStyle} className="flex flex-1 items-center justify-center">
+          <div className="flex flex-1 items-center justify-center overflow-hidden rounded-lg border border-neutral-900 bg-neutral-900">
             <EmptyState
               title="No results yet"
               description="Process a PDF document to view markdown and JSON outputs side by side."
@@ -456,7 +454,7 @@ function ExtractionResultsCard({ document }: ExtractionResultsProps) {
         )}
       </CardContent>
       {document && (
-        <CardFooter className="flex flex-wrap justify-between gap-2 text-xs text-neutral-500">
+        <CardFooter className="flex shrink-0 flex-wrap justify-between gap-2 text-xs text-neutral-500">
           <span>{document.fileName}</span>
           <span>Processed {prettyDate(document.uploadedAt)}</span>
           {document.durationMs ? <span>{document.durationMs} ms</span> : null}
