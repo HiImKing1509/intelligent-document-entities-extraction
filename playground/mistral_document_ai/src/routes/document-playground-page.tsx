@@ -426,18 +426,24 @@ function ExtractionResultsCard({ document }: ExtractionResultsProps) {
               <TabsTrigger value="markdown">Markdown</TabsTrigger>
               <TabsTrigger value="json">JSON</TabsTrigger>
             </TabsList>
-            <TabsContent value="markdown" className="flex flex-1 min-h-0 overflow-hidden">
+            <TabsContent
+              value="markdown"
+              className="flex flex-1 min-h-0 overflow-hidden rounded-lg border border-neutral-900 bg-neutral-900 data-[state=inactive]:hidden"
+            >
               <ScrollArea className="h-full">
-                <article className="prose prose-invert max-w-none">
+                <article className="prose prose-invert max-w-none px-4 py-2">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {document.extraction.markdown}
                   </ReactMarkdown>
                 </article>
               </ScrollArea>
             </TabsContent>
-            <TabsContent value="json" className="flex flex-1 min-h-0 overflow-hidden">
+            <TabsContent
+              value="json"
+              className="flex flex-1 min-h-0 overflow-hidden rounded-lg border border-neutral-900 bg-neutral-900 data-[state=inactive]:hidden"
+            >
               <ScrollArea className="h-full">
-                <pre className="whitespace-pre-wrap rounded-md bg-neutral-900/80 p-4 text-xs text-neutral-100">
+                <pre className="whitespace-pre-wrap px-4 py-2 text-xs text-neutral-100">
                   {JSON.stringify(document.extraction.json, null, 2)}
                 </pre>
               </ScrollArea>
